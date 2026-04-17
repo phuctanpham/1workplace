@@ -1,0 +1,3 @@
+[submodule "gitlab/g1"]
+	path = gitlab/g1
+	url = git@gitlab.com:g1tla6/g1.git
