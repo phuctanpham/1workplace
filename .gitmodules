@@ -1,3 +1,36 @@
 [submodule "gitlab/g1"]
 	path = gitlab/g1
 	url = git@gitlab.com:g1tla6/g1.git
+[submodule "github/uit/ss004/geny"]
+	path = github/uit/ss004/geny
+	url = https://github.com/phuctanpham/geny.git
+[submodule "github/uit/ss004/csnake"]
+	path = github/uit/ss004/csnake
+	url = git@github-phucpt:phuctanpham/csnake.git
+[submodule "github/uit/ss004/ctetris"]
+	path = github/uit/ss004/ctetris
+	url = git@github.com:phuctanpham/ctetris.git
+[submodule "github/uit/cleet"]
+	path = github/uit/cleet
+	url = git@github.com:phuctanpham/cleet.git
+[submodule "github/rnd/valumind"]
+	path = github/rnd/valumind
+	url = git@github.com:phuctanpham/valumind.git
+[submodule "github/rnd/oclean"]
+	path = github/rnd/oclean
+	url = git@github.com:phuctanpham/oclean.git
+[submodule "github/rnd/garblo"]
+	path = github/rnd/garblo
+	url = git@github.com:phuctanpham/garblo.git
+[submodule "github/cvblog"]
+	path = github/cvblog
+	url = git@github.com:phuctanpham/cvblog.git
+[submodule "github/lost-signaling"]
+	path = github/lost-signaling
+	url = git@github.com:phuctanpham/lost-signaling.git
+[submodule "github/rnd/decarbon-gui"]
+	path = github/rnd/decarbon-gui
+	url = git@github.com:phuctanpham/decarbon-gui.git
+[submodule "github/rnd/asstus/asstus-sites"]
+	path = github/rnd/asstus/asstus-sites
+	url = git@github.com:asstus-official/asstus-sites.git

@@ -1,4 +1,2 @@
-github
-!github/.gitkeep
-gitlab
-!gitlab/.gitkeep
+github/**
+gitlab/**
