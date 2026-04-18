@@ -28,15 +28,6 @@
 [submodule "uit/IT00x/cleet"]
 	path = uit/IT00x/cleet
 	url = git@cleet:phuctanpham/cleet.git
-[submodule "work/g1"]
-	path = work/g1
-	url = git@g1:g1tla6/g1.git
-[submodule "gin"]
-	path = gin
-	url = git@gin:g1tla6/gin.git
-[submodule "work/gcalls/gin"]
-	path = work/gcalls/gin
-	url = git@gin:g1tla6/gin.git
 [submodule "work/gcalls/gem"]
 	path = work/gcalls/gem
 	url = git@gem:g1tla6/gem.git
@@ -52,3 +43,9 @@
 [submodule "work/gcalls/exam"]
 	path = work/gcalls/exam
 	url = git@exam:g1tla6/exam.git
+[submodule "work/gcalls/gin"]
+	path = work/gcalls/gin
+	url = git@gin:g1tla6/gin.git
+[submodule "work/g1"]
+	path = work/g1
+	url = git@g1:g1tla6/g1.git
