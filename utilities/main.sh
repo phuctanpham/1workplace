@@ -13,14 +13,20 @@ SRC_DIR="${SCRIPT_DIR}/src"
 
 option_title() {
     case "$(basename "$1")" in
-        01-list-validate-ssh-keys.sh) echo "01 · List & Validate SSH Keys" ;;
-        02-add-new-ssh-key.sh) echo "02 · Add New SSH Key" ;;
-        03-add-new-submodule.sh) echo "03 · Add New Submodule (incl. child scan)" ;;
-        05-remove-submodules.sh) echo "05 · Remove Submodule(s)" ;;
-        06-clean-submodules.sh) echo "06 · Clean Submodule(s)  (hide from VSCode)" ;;
-        07-update-restore-submodules.sh) echo "07 · Update / Restore Submodule(s)" ;;
+        01-list-validate-ssh-keys.sh) echo "List & Validate SSH Keys" ;;
+        02-add-new-ssh-key.sh) echo "Add New SSH Key" ;;
+        03-add-new-submodule.sh) echo "Add New Submodule (incl. child scan)" ;;
+        05-remove-submodules.sh) echo "Remove Submodule(s)" ;;
+        06-clean-submodules.sh) echo "Clean Submodule(s)  (hide from VSCode)" ;;
+        07-update-restore-submodules.sh) echo "Update / Restore Submodule(s)" ;;
         *) echo "$(basename "$1")" ;;
     esac
+}
+
+option_code() {
+    local base
+    base="$(basename "$1")"
+    echo "${base%%-*}"
 }
 
 list_option_scripts() {
@@ -48,12 +54,11 @@ main_menu() {
     while true; do
         print_header "SSH & Submodule Manager"
 
-        i=1
         printf '%s\n' "$option_scripts" | while IFS= read -r script; do
             [ -n "$script" ] || continue
+            code=$(option_code "$script")
             label=$(option_title "$script")
-            printf "  ${YELLOW}%s)${NC} %s\n" "$i" "$label"
-            i=$((i + 1))
+            printf "  ${YELLOW}%s)${NC} %s\n" "$code" "$label"
         done
         printf "  ${YELLOW}%s)${NC} %s\n" "q" "Quit"
 
@@ -74,7 +79,21 @@ main_menu() {
                 ;;
         esac
 
-        script=$(printf '%s\n' "$option_scripts" | sed -n "${opt}p")
+        if [ "${#opt}" -eq 1 ]; then
+            opt="0${opt}"
+        fi
+
+        script=$(printf '%s\n' "$option_scripts" | awk -v o="$opt" '
+            {
+                n = split($0, p, "/")
+                b = p[n]
+                split(b, parts, "-")
+                if (parts[1] == o) {
+                    print $0
+                    exit
+                }
+            }
+        ')
         if [ -n "$script" ]; then
             echo ""
             sh "$script"

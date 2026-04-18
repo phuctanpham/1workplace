@@ -58,49 +58,46 @@ step_06_clean_submodules() {
         return
     fi
 
-    multi_select "Select submodule(s) to clean (deinit):" "${top_subs[@]}"
+    single_select "Select master submodule to clean (deinit):" "no" "${top_subs[@]}"
     local rc=$?
     ((rc == 1)) && return
+    ((rc == 2)) && return
 
-    local s
-    for s in "${SELECTED_ITEMS[@]}"; do
-        if [[ -f "${s}/.gitmodules" ]]; then
-            mapfile -t children < <(get_submodule_paths "$s")
-            if [[ ${#children[@]} -gt 0 ]]; then
-                echo ""
-                echo -e "  ${BOLD}Target:${NC} ${s}"
-                echo -e "${BOLD}This master contains child submodules. What do you want to clean?${NC}"
-                echo "  1) Clean master '${s}' only"
-                echo "  2) Clean only selected child submodule(s)"
-                echo "  3) Skip"
-                echo ""
-                read -rp "  Choice: " mode
-                check_nav "$mode" || return
+    local master="$SELECTED_ITEM"
 
-                case "$mode" in
-                    1)
-                        _clean_submodule_in_parent "." "$s"
-                        ;;
-                    2)
-                        multi_select "Select child submodule(s) to clean in ${s}:" "${children[@]}"
-                        local rc_child=$?
-                        ((rc_child == 1)) && continue
+    if [[ -f "${master}/.gitmodules" ]]; then
+        mapfile -t children < <(get_submodule_paths "$master")
+        if [[ ${#children[@]} -gt 0 ]]; then
+            echo ""
+            echo -e "  ${BOLD}Master target:${NC} ${master}"
 
-                        local child
-                        for child in "${SELECTED_ITEMS[@]}"; do
-                            _clean_submodule_in_parent "$s" "$child"
-                        done
-                        ;;
-                    *)
-                        print_info "Skipped '${s}'."
-                        ;;
-                esac
-                continue
+            multi_select "Select child submodule(s) to clean in ${master}:" "${children[@]}"
+            local rc_child=$?
+            ((rc_child == 1)) && return
+
+            local selected_all_children=false
+            if [[ ${#SELECTED_ITEMS[@]} -eq ${#children[@]} ]]; then
+                selected_all_children=true
             fi
-        fi
 
-        _clean_submodule_in_parent "." "$s"
-    done
+            if $selected_all_children; then
+                local child
+                for child in "${SELECTED_ITEMS[@]}"; do
+                    _clean_submodule_in_parent "$master" "$child"
+                done
+            else
+                # User selected only some children; do not ask about master.
+                local child
+                for child in "${SELECTED_ITEMS[@]}"; do
+                    _clean_submodule_in_parent "$master" "$child"
+                done
+            fi
+        else
+            _clean_submodule_in_parent "." "$master"
+        fi
+    else
+        _clean_submodule_in_parent "." "$master"
+    fi
 
     echo ""
     print_info "Run option 07 to restore any cleaned submodule."

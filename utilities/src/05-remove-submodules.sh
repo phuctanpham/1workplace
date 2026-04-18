@@ -19,66 +19,62 @@ step_05_remove_submodule() {
         return
     fi
 
-    multi_select "Select submodule(s) to permanently remove:" "${top_subs[@]}"
+    single_select "Select master submodule to remove:" "no" "${top_subs[@]}"
     local rc=$?
     ((rc == 1)) && return
+    ((rc == 2)) && return
 
+    local master="$SELECTED_ITEM"
     local fail_count=0
-    local s
-    for s in "${SELECTED_ITEMS[@]}"; do
-        echo ""
-        echo -e "  ${BOLD}Target:${NC} ${s}"
 
-        if [[ -f "${s}/.gitmodules" ]]; then
-            mapfile -t children < <(get_submodule_paths "$s")
-            if [[ ${#children[@]} -gt 0 ]]; then
-                echo -e "${BOLD}This master contains child submodules. What do you want to remove?${NC}"
-                echo "  1) Remove master submodule '${s}' (and all its children)"
-                echo "  2) Remove only selected child submodule(s)"
-                echo "  3) Skip"
-                echo ""
-                read -rp "  Choice: " mode
-                check_nav "$mode" || return
+    echo ""
+    echo -e "  ${BOLD}Master target:${NC} ${master}"
 
-                case "$mode" in
-                    1)
-                        read -rp "  Confirm remove master '${s}'? (y/N): " confirm_master
-                        if [[ "${confirm_master,,}" == "y" ]]; then
-                            _remove_single_submodule "." "$s" || fail_count=$((fail_count + 1))
-                        else
-                            print_info "Skipped master '${s}'."
-                        fi
-                        ;;
-                    2)
-                        multi_select "Select child submodule(s) to remove from ${s}:" "${children[@]}"
-                        local rc_child=$?
-                        ((rc_child == 1)) && continue
+    if [[ -f "${master}/.gitmodules" ]]; then
+        mapfile -t children < <(get_submodule_paths "$master")
+        if [[ ${#children[@]} -gt 0 ]]; then
+            multi_select "Select child submodule(s) to remove from ${master}:" "${children[@]}"
+            local rc_child=$?
+            ((rc_child == 1)) && return
 
-                        read -rp "  Confirm remove selected child submodule(s) from '${s}'? (y/N): " confirm_child
-                        if [[ "${confirm_child,,}" == "y" ]]; then
-                            local child
-                            for child in "${SELECTED_ITEMS[@]}"; do
-                                _remove_single_submodule "$s" "$child" || fail_count=$((fail_count + 1))
-                            done
-                        else
-                            print_info "Skipped child removals for '${s}'."
-                        fi
-                        ;;
-                    *)
-                        print_info "Skipped '${s}'."
-                        ;;
-                esac
-                continue
+            local selected_all_children=false
+            if [[ ${#SELECTED_ITEMS[@]} -eq ${#children[@]} ]]; then
+                selected_all_children=true
+            fi
+
+            if $selected_all_children; then
+                read -rp "  All children selected. Also remove master '${master}'? (y/N): " rm_master
+                if [[ "${rm_master,,}" == "y" ]]; then
+                    _remove_single_submodule "." "$master" || fail_count=$((fail_count + 1))
+                else
+                    local child
+                    for child in "${SELECTED_ITEMS[@]}"; do
+                        _remove_single_submodule "$master" "$child" || fail_count=$((fail_count + 1))
+                    done
+                fi
+            else
+                # User selected only some children; do not ask about master.
+                local child
+                for child in "${SELECTED_ITEMS[@]}"; do
+                    _remove_single_submodule "$master" "$child" || fail_count=$((fail_count + 1))
+                done
+            fi
+        else
+            read -rp "  Confirm remove master '${master}'? (y/N): " confirm
+            if [[ "${confirm,,}" == "y" ]]; then
+                _remove_single_submodule "." "$master" || fail_count=$((fail_count + 1))
+            else
+                print_info "Skipped '${master}'."
             fi
         fi
-
-        read -rp "  Confirm remove '${s}'? (y/N): " confirm
+    else
+        read -rp "  Confirm remove master '${master}'? (y/N): " confirm
         if [[ "${confirm,,}" == "y" ]]; then
-            _remove_single_submodule "." "$s" || fail_count=$((fail_count + 1))
+            _remove_single_submodule "." "$master" || fail_count=$((fail_count + 1))
         else
-            print_info "Skipped '${s}'."
+            print_info "Skipped '${master}'."
         fi
-    done
+    fi
 
     echo ""
     if ((fail_count > 0)); then

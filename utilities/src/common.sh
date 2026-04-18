@@ -209,6 +209,38 @@ remove_ssh_config_entries_by_prefix() {
     done
 }
 
+remove_ssh_alias_for_submodule() {
+    local parent="$1" sub="$2"
+    local url master_alias legacy_alias
+
+    url=$(get_submodule_url "$parent" "$sub" 2>/dev/null || true)
+    if [[ "$url" == git@* ]]; then
+        master_alias=$(_master_alias_from_url "$url")
+        legacy_alias=$(_url_to_alias "$url")
+        remove_ssh_config_entry "$master_alias"
+        [[ "$legacy_alias" != "$master_alias" ]] && remove_ssh_config_entry "$legacy_alias"
+
+        # Removing master submodule from top-level: remove all child aliases by prefix.
+        if [[ "$parent" == "." ]]; then
+            remove_ssh_config_entries_by_prefix "$master_alias"
+        fi
+    fi
+
+    # Fallback for child cleanup when URL lookup is missing/stale.
+    if [[ "$parent" != "." ]]; then
+        local parent_url parent_master child_repo expected_child_alias
+        parent_url=$(get_submodule_url "." "$parent" 2>/dev/null || true)
+        if [[ "$parent_url" == git@* ]]; then
+            parent_master=$(_master_alias_from_url "$parent_url")
+        else
+            parent_master=$(basename "$parent")
+        fi
+        child_repo=$(basename "$sub")
+        expected_child_alias="${parent_master}-${child_repo}"
+        remove_ssh_config_entry "$expected_child_alias"
+    fi
+}
+
 multi_select() {
     local title="$1"
     shift
@@ -303,6 +335,33 @@ get_submodule_url() {
     git -C "$dir" config -f .gitmodules "submodule.${name}.url" 2>/dev/null
 }
 
+_remove_remote_by_url_if_present() {
+    local repo_dir="$1" target_url="$2"
+    [[ -n "$target_url" ]] || return 0
+
+    git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || return 0
+
+    local removed=0
+    local remotes
+    mapfile -t remotes < <(git -C "$repo_dir" remote 2>/dev/null || true)
+
+    local r
+    for r in "${remotes[@]}"; do
+        local current_url
+        current_url=$(git -C "$repo_dir" remote get-url "$r" 2>/dev/null || true)
+        if [[ "$current_url" == "$target_url" ]]; then
+            if git -C "$repo_dir" remote remove "$r" >/dev/null 2>&1; then
+                print_info "Removed remote '${r}' (${target_url})"
+                removed=1
+            fi
+        fi
+    done
+
+    if ((removed == 0)); then
+        print_info "No matching remote URL to remove: ${target_url}"
+    fi
+}
+
 _remove_single_submodule() {
     local parent="$1" sub="$2"
     local full="${parent%/}/${sub}"
@@ -311,21 +370,16 @@ _remove_single_submodule() {
     echo ""
     echo -e "  ${BOLD}Removing:${NC} ${sub}"
 
-    # Remove SSH config entries for the target submodule and legacy aliases.
+    # Remove remote entries by exact submodule URL first.
     local url
     url=$(get_submodule_url "$parent" "$sub" 2>/dev/null || true)
-    if [[ "$url" == git@* ]]; then
-        local master_alias legacy_alias
-        master_alias=$(_master_alias_from_url "$url")
-        legacy_alias=$(_url_to_alias "$url")
-        remove_ssh_config_entry "$master_alias"
-        [[ "$legacy_alias" != "$master_alias" ]] && remove_ssh_config_entry "$legacy_alias"
 
-        # If removing a master submodule, also remove all prefixed child aliases.
-        if [[ "$parent" == "." ]]; then
-            remove_ssh_config_entries_by_prefix "$master_alias"
-        fi
+    if [[ -d "$full/.git" || -f "$full/.git" ]]; then
+        _remove_remote_by_url_if_present "$full" "$url"
     fi
+
+    # Remove SSH config entries for this target after remote cleanup.
+    remove_ssh_alias_for_submodule "$parent" "$sub"
 
     # If this submodule has nested children, remove their SSH blocks by exact alias too.
     if [[ -f "${full}/.gitmodules" ]]; then
@@ -351,10 +405,6 @@ _remove_single_submodule() {
         print_info "Deinitialized ${sub}"
     else
         print_warn "deinit had warnings for ${sub}"
-    fi
-
-    if [[ -d "$full/.git" || -f "$full/.git" ]]; then
-        git -C "$full" remote remove origin >/dev/null 2>&1 || true
     fi
 
     # Remove tracked files, then also clear any remaining cached entry if needed.

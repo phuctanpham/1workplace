@@ -9,6 +9,51 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
+_has_gitlink_in_index_at() {
+    local dir="$1" path="$2"
+    git -C "$dir" ls-files --stage -- "$path" 2>/dev/null | awk '{print $1}' | grep -q '^160000$'
+}
+
+_has_gitlink_in_head_at() {
+    local dir="$1" path="$2"
+    git -C "$dir" ls-tree -d HEAD -- "$path" 2>/dev/null | awk '{print $1}' | grep -q '^160000$'
+}
+
+_submodule_section_for_path_at() {
+    local dir="$1" path="$2"
+    git -C "$dir" config -f .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null \
+        | awk -v p="$path" '$2 == p { print $1; exit }'
+}
+
+_ensure_child_gitlink_tracked_in_master() {
+    local master_path="$1" child_path="$2"
+    local child_url section_name
+
+    if _has_gitlink_in_index_at "$master_path" "$child_path"; then
+        return 0
+    fi
+
+    if _has_gitlink_in_head_at "$master_path" "$child_path"; then
+        if git -C "$master_path" restore --source=HEAD --staged --worktree -- "$child_path" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    child_url=$(get_submodule_url "$master_path" "$child_path")
+    [[ -n "$child_url" ]] || return 1
+
+    section_name=$(_submodule_section_for_path_at "$master_path" "$child_path" || true)
+    section_name="${section_name#submodule.}"
+    section_name="${section_name%.path}"
+    [[ -n "$section_name" ]] || section_name="$child_path"
+
+    if [[ -d "${master_path}/${child_path}" && -z "$(ls -A "${master_path}/${child_path}" 2>/dev/null)" ]]; then
+        rmdir "${master_path}/${child_path}" 2>/dev/null || true
+    fi
+
+    git -C "$master_path" submodule add -f --name "$section_name" "$child_url" "$child_path" >/dev/null 2>&1
+}
+
 configure_child_submodules_for_master() {
     local master_path="$1" master_alias="$2"
 
@@ -29,7 +74,7 @@ configure_child_submodules_for_master() {
             pending+=("$c")
         else
             echo -e "  ${BOLD}Child:${NC} ${c}  ${DIM}(${curl})${NC}"
-            print_info "Public / HTTPS URL — no SSH key needed."
+            print_warn "Non-SSH child URL detected — skipped (use SSH URL to configure alias)."
             echo ""
         fi
     done
@@ -109,6 +154,7 @@ configure_child_submodules_for_master() {
                 if [[ -n "$section_name" ]]; then
                     git -C "$master_path" config -f .gitmodules "${section_name}.url" "$new_url"
                     git -C "$master_path" config "${section_name}.url" "$new_url" 2>/dev/null || true
+                    _ensure_child_gitlink_tracked_in_master "$master_path" "$chosen" 2>/dev/null || true
                     if git -C "${master_path}/${chosen}" rev-parse --git-dir >/dev/null 2>&1; then
                         git -C "${master_path}/${chosen}" remote set-url origin "$new_url" 2>/dev/null || true
                     fi
@@ -159,7 +205,7 @@ step_03_add_submodule() {
 
     echo -e "${BOLD}Submodule URL:${NC}"
     echo -e "${DIM}  SSH   : git@alias:org/repo.git${NC}"
-    echo -e "${DIM}  HTTPS : https://github.com/org/repo.git (public)${NC}\n"
+    echo -e "${DIM}  HTTPS is not accepted in this workflow.${NC}\n"
     read -rp "  URL: " sub_url
     check_nav "$sub_url" || return
     [[ -z "$sub_url" ]] && {
@@ -171,8 +217,12 @@ step_03_add_submodule() {
     local is_ssh=false
     if [[ "$sub_url" == git@* ]]; then
         is_ssh=true
-    elif [[ "$sub_url" != https://* ]]; then
-        print_error "URL must start with git@ or https://"
+    elif [[ "$sub_url" == https://* ]]; then
+        print_warn "HTTPS URLs are not accepted. Use SSH URL: git@host:group/repo.git"
+        pause
+        return
+    else
+        print_error "URL must start with git@"
         pause
         return
     fi
