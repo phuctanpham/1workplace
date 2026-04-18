@@ -81,10 +81,15 @@ step_06_clean_submodules() {
             fi
 
             if $selected_all_children; then
-                local child
-                for child in "${SELECTED_ITEMS[@]}"; do
-                    _clean_submodule_in_parent "$master" "$child"
-                done
+                read -rp "  All children selected. Also clean master '${master}'? (y/N): " clean_master
+                if [[ "${clean_master,,}" == "y" ]]; then
+                    _clean_submodule_in_parent "." "$master"
+                else
+                    local child
+                    for child in "${SELECTED_ITEMS[@]}"; do
+                        _clean_submodule_in_parent "$master" "$child"
+                    done
+                fi
             else
                 # User selected only some children; do not ask about master.
                 local child
