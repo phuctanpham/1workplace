@@ -5,11 +5,11 @@ fi
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 SRC_DIR="${SCRIPT_DIR}/src"
 
 # shellcheck source=src/common.sh
-source "${SRC_DIR}/common.sh"
+. "${SRC_DIR}/common.sh"
 
 option_title() {
     case "$(basename "$1")" in
@@ -25,18 +25,23 @@ option_title() {
 }
 
 list_option_scripts() {
-    local scripts=()
-    local f
+    found_any=0
     for f in "${SRC_DIR}"/[0-9][0-9]-*.sh; do
-        [[ -f "$f" ]] || continue
-        scripts+=("$f")
+        [ -f "$f" ] || continue
+        found_any=1
+        echo "$f"
     done
-    printf '%s\n' "${scripts[@]}"
+
+    if [ "$found_any" -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
 }
 
 main_menu() {
-    mapfile -t option_scripts < <(list_option_scripts)
-    if [[ ${#option_scripts[@]} -eq 0 ]]; then
+    option_scripts="$(list_option_scripts || true)"
+    if [ -z "$option_scripts" ]; then
         print_error "No option scripts found in ${SRC_DIR}."
         exit 1
     fi
@@ -44,27 +49,36 @@ main_menu() {
     while true; do
         print_header "SSH & Submodule Manager"
 
-        local i
-        for i in "${!option_scripts[@]}"; do
-            local label
-            label=$(option_title "${option_scripts[$i]}")
-            printf "  ${YELLOW}%s)${NC} %s\n" "$((i + 1))" "$label"
+        i=1
+        printf '%s\n' "$option_scripts" | while IFS= read -r script; do
+            [ -n "$script" ] || continue
+            label=$(option_title "$script")
+            printf "  ${YELLOW}%s)${NC} %s\n" "$i" "$label"
+            i=$((i + 1))
         done
         printf "  ${YELLOW}%s)${NC} %s\n" "q" "Quit"
 
         echo ""
         read -rp "  Option: " opt
 
-        case "${opt,,}" in
-            q)
+        case "$opt" in
+            q|Q)
                 print_info "Goodbye!"
                 exit 0
                 ;;
         esac
 
-        if [[ "$opt" =~ ^[0-9]+$ ]] && ((opt >= 1 && opt <= ${#option_scripts[@]})); then
+        case "$opt" in
+            ''|*[!0-9]*)
+                print_error "Unknown option '${opt}'."
+                continue
+                ;;
+        esac
+
+        script=$(printf '%s\n' "$option_scripts" | sed -n "${opt}p")
+        if [ -n "$script" ]; then
             echo ""
-            sh "${option_scripts[$((opt - 1))]}"
+            sh "$script"
             continue
         fi
 

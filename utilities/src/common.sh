@@ -86,6 +86,24 @@ list_private_keys() {
     done
 }
 
+matching_public_key_file() {
+    local key_name="$1"
+    local key_path="${SSH_DIR}/${key_name}"
+    local stem="${key_name%.*}"
+
+    if [[ -f "${key_path}.pub" ]]; then
+        echo "${key_name}.pub"
+        return 0
+    fi
+
+    if [[ "$stem" != "$key_name" && -f "${SSH_DIR}/${stem}.pub" ]]; then
+        echo "${stem}.pub"
+        return 0
+    fi
+
+    return 1
+}
+
 _url_to_alias() { echo "$1" | sed -E 's/git@([^:]+):.*/\1/'; }
 
 _alias_to_hostname() {
@@ -100,6 +118,22 @@ _alias_to_hostname() {
 }
 
 _host_exists() { grep -qE "^Host[[:space:]]+${1}$" "$SSH_CONFIG" 2>/dev/null; }
+
+_host_hostname() {
+    local alias="$1"
+    awk -v h="$alias" '
+        /^Host[[:space:]]+/ { in_host = ($2 == h) }
+        in_host && /^  HostName[[:space:]]+/ { print $2; exit }
+    ' "$SSH_CONFIG" 2>/dev/null
+}
+
+_host_identityfile() {
+    local alias="$1"
+    awk -v h="$alias" '
+        /^Host[[:space:]]+/ { in_host = ($2 == h) }
+        in_host && /^  IdentityFile[[:space:]]+/ { print $2; exit }
+    ' "$SSH_CONFIG" 2>/dev/null
+}
 
 add_ssh_config_entry() {
     local alias="$1" hostname="$2" key_file="$3"

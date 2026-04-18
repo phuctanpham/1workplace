@@ -1,0 +1,3 @@
+[submodule "works/g1"]
+	path = works/g1
+	url = git@g1:g1tla6/g1.git

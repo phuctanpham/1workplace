@@ -34,10 +34,17 @@ step_06_clean_submodules() {
             && print_success "Deinitialized ${s}" \
             || print_warn "deinit had warnings for ${s}"
 
+        # If this submodule was newly added and auto-staged, drop it from index.
+        git restore --staged -- "$s" 2>/dev/null || true
+
         if [[ -d "$s" ]]; then
-            find "$s" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} + 2>/dev/null || true
-            print_info "Working tree cleared: ${s}"
+            # Remove all metadata/content so the path behaves like not-initialized state.
+            find "$s" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+            print_info "Working tree metadata cleared: ${s}"
         fi
+
+        rm -rf ".git/modules/${s}" 2>/dev/null || true
+        mkdir -p "$s" 2>/dev/null || true
     done
 
     echo ""

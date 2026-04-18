@@ -14,7 +14,8 @@ step_02_add_key() {
     print_nav_hint ""
 
     echo -e "${BOLD}Paste your SSH PRIVATE key.${NC}"
-    echo -e "${DIM}  (Paste all lines, then type END on its own line)${NC}\n"
+    echo -e "${DIM}  (Paste the full key, including the -----END ... PRIVATE KEY----- line)${NC}"
+    echo -e "${DIM}  (You can also type END on its own line or press Ctrl-D when finished)${NC}\n"
 
     local private_key="" line
     while IFS= read -r line; do
@@ -31,6 +32,9 @@ step_02_add_key() {
                 ;;
         esac
         private_key+="${line}"$'\n'
+        if [[ "$line" =~ ^-----END[[:space:]].*PRIVATE[[:space:]]KEY-----$ ]]; then
+            break
+        fi
     done
 
     if ! echo "$private_key" | grep -q "PRIVATE KEY"; then

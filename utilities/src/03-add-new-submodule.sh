@@ -58,6 +58,11 @@ step_03_add_submodule() {
     fi
 
     if $is_ssh; then
+        local original_sub_url="$sub_url"
+        local original_alias
+        original_alias=$(_url_to_alias "$original_sub_url")
+        local custom_alias_applied=0
+
         mapfile -t keys < <(list_private_keys)
         if [[ ${#keys[@]} -eq 0 ]]; then
             print_warn "No SSH keys found — add one via option 02 first."
@@ -84,11 +89,41 @@ step_03_add_submodule() {
                     repo_part=$(echo "$sub_url" | sed -E 's/git@[^:]+://')
                     sub_url="git@${custom}:${repo_part}"
                     alias="$custom"
+                    custom_alias_applied=1
                 fi
             fi
 
             local hostname
-            hostname=$(_alias_to_hostname "$alias")
+            if (( custom_alias_applied == 1 )); then
+                hostname="$original_alias"
+            else
+                hostname=$(_alias_to_hostname "$alias")
+            fi
+
+            if _host_exists "$alias"; then
+                local existing_hostname existing_identity expected_identity
+                existing_hostname=$(_host_hostname "$alias")
+                existing_identity=$(_host_identityfile "$alias")
+                expected_identity="${SSH_DIR}/${SELECTED_ITEM}"
+
+                if [[ "$existing_hostname" != "$hostname" || "$existing_identity" != "$expected_identity" ]]; then
+                    print_warn "Host alias '${alias}' already exists with different settings:"
+                    print_info "Current: HostName=${existing_hostname:-?}, IdentityFile=${existing_identity:-?}"
+                    print_info "Wanted : HostName=${hostname}, IdentityFile=${expected_identity}"
+                    read -rp "  Update this alias? (y/N): " upd
+                    if [[ "${upd,,}" == "y" ]]; then
+                        remove_ssh_config_entry "$alias"
+                    elif (( custom_alias_applied == 1 )); then
+                        print_warn "Keeping existing alias and reverting URL to original host alias."
+                        sub_url="$original_sub_url"
+                        alias=$(_url_to_alias "$sub_url")
+                        hostname=$(_alias_to_hostname "$alias")
+                    else
+                        print_warn "Keeping existing alias configuration."
+                    fi
+                fi
+            fi
+
             add_ssh_config_entry "$alias" "$hostname" "$SELECTED_ITEM"
         fi
     fi

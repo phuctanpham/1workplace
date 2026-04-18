@@ -49,12 +49,14 @@ step_01_list_keys() {
             && print_success "Fingerprint: ${fp}" \
             || print_error "Cannot read fingerprint"
 
-        [[ -f "${kpath}.pub" ]] \
-            && print_success "Public key: ${key}.pub" \
-            || print_warn "No matching .pub file"
+        if pub_file=$(matching_public_key_file "$key"); then
+            print_success "Public key: ${pub_file}"
+        else
+            print_warn "No matching .pub file"
+        fi
 
         local hosts
-        hosts=$(grep -B5 "IdentityFile.*${key}" "$SSH_CONFIG" 2>/dev/null | awk '/^Host[[:space:]]/{print $2}' | tr '\n' ' ')
+        hosts=$(grep -B5 "IdentityFile.*${key}" "$SSH_CONFIG" 2>/dev/null | awk '/^Host[[:space:]]/{print $2}' | tr '\n' ' ' || true)
         if [[ -z "$hosts" ]]; then
             print_warn "Not assigned to any SSH config Host alias"
             continue
