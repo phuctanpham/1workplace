@@ -135,6 +135,72 @@ _ensure_gitlink_tracked() {
     return 1
 }
 
+_is_submodule_deinitialized_in_parent() {
+    local parent="$1" sub="$2"
+    local line
+
+    line=$(git -C "$parent" submodule status -- "$sub" 2>/dev/null | head -n 1 || true)
+    if [[ -n "$line" ]]; then
+        [[ "${line:0:1}" == "-" ]] && return 0
+        return 1
+    fi
+
+    local full
+    if [[ "$parent" == "." ]]; then
+        full="$sub"
+    else
+        full="${parent%/}/${sub}"
+    fi
+
+    if [[ -d "$full/.git" || -f "$full/.git" ]]; then
+        return 1
+    fi
+    return 0
+}
+
+_ssh_child_identifiers_for_master() {
+    local master_alias="$1"
+    [[ -f "$SSH_CONFIG" ]] || return 0
+
+    awk -v p="${master_alias}-" '
+        /^Host[[:space:]]+/ {
+            alias = $2
+            if (index(alias, p) == 1) {
+                child = substr(alias, length(p) + 1)
+                if (child != "") {
+                    print child
+                }
+            }
+        }
+    ' "$SSH_CONFIG" 2>/dev/null | sort -u
+}
+
+_child_paths_for_identifiers_in_parent() {
+    local parent_dir="$1"
+    shift
+    local wanted=("$@")
+
+    mapfile -t parent_children < <(get_submodule_paths "$parent_dir")
+    [[ ${#parent_children[@]} -gt 0 ]] || return 0
+
+    local id child child_url child_repo_name child_base
+    for id in "${wanted[@]}"; do
+        for child in "${parent_children[@]}"; do
+            child_url=$(_submodule_url_for_path_at "$parent_dir" "$child" || true)
+            child_repo_name=""
+            if [[ -n "$child_url" ]]; then
+                child_repo_name=$(_repo_name_from_url "$child_url")
+            fi
+            child_base=$(basename "$child")
+
+            if [[ "$id" == "$child" || "$id" == "$child_base" || ( -n "$child_repo_name" && "$id" == "$child_repo_name" ) ]]; then
+                echo "$child"
+                break
+            fi
+        done
+    done
+}
+
 step_07_update_submodules() {
     print_header "07 · Update / Restore Submodule(s)"
 
@@ -154,6 +220,51 @@ step_07_update_submodules() {
         echo ""
         echo -e "  ${BOLD}Updating:${NC} ${s}"
 
+        local master_was_deinited=false
+        local restore_mode=""
+        local preselected_child_ids=()
+        if _is_submodule_deinitialized_in_parent "." "$s"; then
+            master_was_deinited=true
+
+            local master_url master_alias
+            master_url=$(_submodule_url_for_path "$s" || true)
+            master_alias=""
+            if [[ "$master_url" == git@* ]]; then
+                master_alias=$(_master_alias_from_url "$master_url")
+            fi
+
+            local ssh_children=()
+            if [[ -n "$master_alias" ]]; then
+                mapfile -t ssh_children < <(_ssh_child_identifiers_for_master "$master_alias")
+            fi
+
+            if [[ ${#ssh_children[@]} -gt 0 ]]; then
+                print_info "Found child submodule candidates from .ssh/config."
+                echo -e "${BOLD}Restore mode for ${s}:${NC}"
+                echo "  1) Restore only master submodule"
+                echo "  2) Restore master submodule and selected child submodule(s)"
+                echo "  3) Restore master submodule and all child submodule(s)"
+                echo ""
+                read -rp "  Choice: " restore_mode
+                check_nav "$restore_mode" || return
+
+                case "$restore_mode" in
+                    2)
+                        multi_select "Select child submodule(s) to restore in ${s} (from .ssh/config):" "${ssh_children[@]}"
+                        local rc_child=$?
+                        ((rc_child == 1)) && continue
+                        preselected_child_ids=("${SELECTED_ITEMS[@]}")
+                        ;;
+                    3)
+                        preselected_child_ids=("${ssh_children[@]}")
+                        ;;
+                    *)
+                        preselected_child_ids=()
+                        ;;
+                esac
+            fi
+        fi
+
         if ! _ensure_gitlink_tracked "$s"; then
             continue
         fi
@@ -169,32 +280,71 @@ step_07_update_submodules() {
         if [[ -f "${s}/.gitmodules" ]]; then
             mapfile -t children < <(get_submodule_paths "$s")
             if [[ ${#children[@]} -gt 0 ]]; then
-                print_info "Found nested submodules."
-                echo -e "${BOLD}Restore mode for ${s}:${NC}"
-                echo "  1) Restore only master '${s}'"
-                echo "  2) Restore selected child submodule(s)"
-                echo "  3) Restore all child submodule(s)"
-                echo ""
-                read -rp "  Choice: " mode
-                check_nav "$mode" || return
-
                 local targets=()
-                case "$mode" in
-                    2)
-                        multi_select "Select child submodule(s) to restore in ${s}:" "${children[@]}"
-                        local rc_child=$?
-                        ((rc_child == 1)) && continue
-                        targets=("${SELECTED_ITEMS[@]}")
-                        ;;
-                    3)
-                        targets=("${children[@]}")
-                        ;;
-                    *)
-                        targets=()
-                        ;;
-                esac
 
-                local child
+                if $master_was_deinited; then
+                    if [[ -n "$restore_mode" ]]; then
+                        case "$restore_mode" in
+                            2)
+                                mapfile -t targets < <(_child_paths_for_identifiers_in_parent "$s" "${preselected_child_ids[@]}")
+                                ;;
+                            3)
+                                targets=("${children[@]}")
+                                ;;
+                            *)
+                                targets=()
+                                ;;
+                        esac
+
+                        if [[ "$restore_mode" == "2" && ${#preselected_child_ids[@]} -gt 0 && ${#targets[@]} -eq 0 ]]; then
+                            print_warn "No selected child aliases matched ${s}/.gitmodules paths."
+                        fi
+                    else
+                        print_info "Found nested submodules."
+                        echo -e "${BOLD}Restore mode for ${s}:${NC}"
+                        echo "  1) Restore only master submodule"
+                        echo "  2) Restore master submodule and selected child submodule(s)"
+                        echo "  3) Restore master submodule and all child submodule(s)"
+                        echo ""
+                        read -rp "  Choice: " mode
+                        check_nav "$mode" || return
+
+                        case "$mode" in
+                            2)
+                                multi_select "Select child submodule(s) to restore in ${s}:" "${children[@]}"
+                                local rc_child=$?
+                                ((rc_child == 1)) && continue
+                                targets=("${SELECTED_ITEMS[@]}")
+                                ;;
+                            3)
+                                targets=("${children[@]}")
+                                ;;
+                            *)
+                                targets=()
+                                ;;
+                        esac
+                    fi
+                else
+                    local deinited_children=()
+                    local child
+                    for child in "${children[@]}"; do
+                        if _is_submodule_deinitialized_in_parent "$s" "$child"; then
+                            deinited_children+=("$child")
+                        fi
+                    done
+
+                    if [[ ${#deinited_children[@]} -eq 0 ]]; then
+                        print_info "nothing to restore"
+                        continue
+                    fi
+
+                    print_info "Found deinited child submodule(s)."
+                    multi_select "Select deinited child submodule(s) to restore in ${s}:" "${deinited_children[@]}"
+                    local rc_child=$?
+                    ((rc_child == 1)) && continue
+                    targets=("${SELECTED_ITEMS[@]}")
+                fi
+
                 for child in "${targets[@]}"; do
                     printf "    ${DIM}↳ updating %s${NC}\n" "$child"
                     if ! _ensure_child_gitlink_tracked "$s" "$child"; then
@@ -208,6 +358,8 @@ step_07_update_submodules() {
                     fi
                 done
             fi
+        elif ! $master_was_deinited; then
+            print_info "nothing to restore"
         fi
     done
 
