@@ -1,0 +1,54 @@
+[submodule "learn/cvblog"]
+	path = learn/cvblog
+	url = git@cvblog:phuctanpham/cvblog.git
+[submodule "game/oclean"]
+	path = game/oclean
+	url = git@oclean:phuctanpham/oclean.git
+[submodule "project/decarbon"]
+	path = project/decarbon
+	url = git@decarbon-gui:phuctanpham/decarbon-gui.git
+[submodule "project/valumind"]
+	path = project/valumind
+	url = git@valumind:phuctanpham/valumind.git
+[submodule "novel/lost-signaling"]
+	path = novel/lost-signaling
+	url = git@lost-signaling:phuctanpham/lost-signaling.git
+[submodule "uit/ss004/geny"]
+	path = uit/ss004/geny
+	url = git@geny:phuctanpham/geny.git
+[submodule "uit/ss004/csnake"]
+	path = uit/ss004/csnake
+	url = git@csnake:phuctanpham/csnake.git
+[submodule "uit/ss004/ctetris"]
+	path = uit/ss004/ctetris
+	url = git@ctetris:phuctanpham/ctetris.git
+[submodule "project/garblo"]
+	path = project/garblo
+	url = git@garblo:phuctanpham/garblo.git
+[submodule "uit/IT00x/cleet"]
+	path = uit/IT00x/cleet
+	url = git@cleet:phuctanpham/cleet.git
+[submodule "work/g1"]
+	path = work/g1
+	url = git@g1:g1tla6/g1.git
+[submodule "gin"]
+	path = gin
+	url = git@gin:g1tla6/gin.git
+[submodule "work/gcalls/gin"]
+	path = work/gcalls/gin
+	url = git@gin:g1tla6/gin.git
+[submodule "work/gcalls/gem"]
+	path = work/gcalls/gem
+	url = git@gem:g1tla6/gem.git
+[submodule "work/gcalls/3meet"]
+	path = work/gcalls/3meet
+	url = git@3meet:g1tla6/3meet.git
+[submodule "work/gcalls/2vision"]
+	path = work/gcalls/2vision
+	url = git@2vision:g1tla6/2vision.git
+[submodule "work/gcalls/7reflection"]
+	path = work/gcalls/7reflection
+	url = git@7reflection:g1tla6/7reflection.git
+[submodule "work/gcalls/exam"]
+	path = work/gcalls/exam
+	url = git@exam:g1tla6/exam.git
