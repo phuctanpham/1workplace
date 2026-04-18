@@ -284,7 +284,7 @@ step_03_add_submodule() {
 
     echo ""
     print_info "Running: git submodule add ${sub_url} ${sub_path}"
-    if git submodule add "$sub_url" "$sub_path"; then
+    if git submodule add -f "$sub_url" "$sub_path"; then
         print_success "Submodule added!"
 
         if [[ "$sub_url" == git@* && -n "$master_alias" ]]; then
