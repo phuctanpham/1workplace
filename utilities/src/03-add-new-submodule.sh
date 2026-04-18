@@ -25,6 +25,24 @@ _submodule_section_for_path_at() {
         | awk -v p="$path" '$2 == p { print $1; exit }'
 }
 
+_test_git_ssh_access() {
+    local url="$1" key_file="$2" ssh_alias="$3" ssh_host="$4" out rc
+    local ssh_command="ssh -i ${SSH_DIR}/${key_file} -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=6"
+
+    print_info "Testing SSH access for ${ssh_alias} → ${ssh_host}..."
+    out=$(GIT_SSH_COMMAND="$ssh_command" git ls-remote --exit-code "$url" HEAD 2>&1) || rc=$?
+    rc=${rc:-0}
+
+    if ((rc == 0)); then
+        print_success "SSH access confirmed for ${url}"
+        return 0
+    fi
+
+    print_error "SSH access check failed for ${url}"
+    echo -e "${DIM}${out}${NC}"
+    return 1
+}
+
 _ensure_child_gitlink_tracked_in_master() {
     local master_path="$1" child_path="$2"
     local child_url section_name
@@ -263,23 +281,33 @@ step_03_add_submodule() {
             return
         fi
 
-        echo ""
-        single_select "SSH key for this submodule:" "yes" "${keys[@]}"
-        local rc=$?
-        ((rc == 1)) && return
+        while true; do
+            echo ""
+            single_select "SSH key for this submodule:" "yes" "${keys[@]}"
+            local rc=$?
+            ((rc == 1)) && return
 
-        if [[ -n "$SELECTED_ITEM" ]]; then
-            local alias hostname
+            if [[ -z "$SELECTED_ITEM" ]]; then
+                print_warn "No SSH key selected."
+                continue
+            fi
+
+            local alias hostname master_alias_url
             alias=$(_master_alias_from_url "$sub_url")
             master_alias="$alias"
             hostname=$(_alias_to_hostname "$source_host")
 
             upsert_ssh_config_entry "$alias" "$hostname" "$SELECTED_ITEM"
 
-            local master_alias_url
             master_alias_url=$(_url_with_alias "$sub_url" "$alias")
             sub_url="$master_alias_url"
-        fi
+
+            if _test_git_ssh_access "$sub_url" "$SELECTED_ITEM" "$alias" "$hostname"; then
+                break
+            fi
+
+            print_warn "Pick another SSH key or press b/q to stop."
+        done
     fi
 
     echo ""
@@ -300,6 +328,10 @@ step_03_add_submodule() {
         echo -e "${DIM}  Next: git add .gitmodules ${sub_path} && git commit -m 'chore: add submodule'${NC}"
     else
         print_error "git submodule add failed."
+        if [[ -n "$master_alias" ]]; then
+            print_info "Removing SSH config entry: ${master_alias}"
+            remove_ssh_config_entry "$master_alias"
+        fi
     fi
 
     pause
