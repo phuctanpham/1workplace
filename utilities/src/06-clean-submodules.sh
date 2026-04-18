@@ -9,6 +9,43 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
+_clean_submodule_in_parent() {
+    local parent="$1" sub="$2"
+    local full
+    if [[ "$parent" == "." ]]; then
+        full="$sub"
+    else
+        full="${parent%/}/${sub}"
+    fi
+
+    echo ""
+    echo -e "  ${BOLD}Cleaning:${NC} ${parent}/${sub}"
+
+    git -C "$parent" submodule deinit -f -- "$sub" 2>/dev/null \
+        && print_success "Deinitialized ${sub}" \
+        || print_warn "deinit had warnings for ${sub}"
+
+    git -C "$parent" restore --staged -- "$sub" 2>/dev/null || true
+    git -C "$parent" rm --cached -- "$sub" 2>/dev/null || true
+
+    local gm_key gm_section
+    gm_key=$(git -C "$parent" config -f .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null | awk -v p="$sub" '$2 == p {print $1; exit}' || true)
+    if [[ -n "$gm_key" ]]; then
+        gm_section="${gm_key%.path}"
+        git -C "$parent" config --remove-section "$gm_section" 2>/dev/null || true
+    fi
+
+    rm -rf "$full" 2>/dev/null || true
+    if [[ "$parent" == "." ]]; then
+        rm -rf ".git/modules/${sub}" 2>/dev/null || true
+    else
+        rm -rf "${parent}/.git/modules/${sub}" 2>/dev/null || true
+    fi
+
+    mkdir -p "$full" 2>/dev/null || true
+    print_info "Working tree reset: ${full}"
+}
+
 step_06_clean_submodules() {
     print_header "06 · Clean Submodule(s)"
     echo -e "${DIM}  Deinitialises submodules so VSCode Source Control stops tracking them.${NC}"
@@ -27,24 +64,42 @@ step_06_clean_submodules() {
 
     local s
     for s in "${SELECTED_ITEMS[@]}"; do
-        echo ""
-        echo -e "  ${BOLD}Cleaning:${NC} ${s}"
+        if [[ -f "${s}/.gitmodules" ]]; then
+            mapfile -t children < <(get_submodule_paths "$s")
+            if [[ ${#children[@]} -gt 0 ]]; then
+                echo ""
+                echo -e "  ${BOLD}Target:${NC} ${s}"
+                echo -e "${BOLD}This master contains child submodules. What do you want to clean?${NC}"
+                echo "  1) Clean master '${s}' only"
+                echo "  2) Clean only selected child submodule(s)"
+                echo "  3) Skip"
+                echo ""
+                read -rp "  Choice: " mode
+                check_nav "$mode" || return
 
-        git submodule deinit -f "$s" 2>/dev/null \
-            && print_success "Deinitialized ${s}" \
-            || print_warn "deinit had warnings for ${s}"
+                case "$mode" in
+                    1)
+                        _clean_submodule_in_parent "." "$s"
+                        ;;
+                    2)
+                        multi_select "Select child submodule(s) to clean in ${s}:" "${children[@]}"
+                        local rc_child=$?
+                        ((rc_child == 1)) && continue
 
-        # If this submodule was newly added and auto-staged, drop it from index.
-        git restore --staged -- "$s" 2>/dev/null || true
-
-        if [[ -d "$s" ]]; then
-            # Remove all metadata/content so the path behaves like not-initialized state.
-            find "$s" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
-            print_info "Working tree metadata cleared: ${s}"
+                        local child
+                        for child in "${SELECTED_ITEMS[@]}"; do
+                            _clean_submodule_in_parent "$s" "$child"
+                        done
+                        ;;
+                    *)
+                        print_info "Skipped '${s}'."
+                        ;;
+                esac
+                continue
+            fi
         fi
 
-        rm -rf ".git/modules/${s}" 2>/dev/null || true
-        mkdir -p "$s" 2>/dev/null || true
+        _clean_submodule_in_parent "." "$s"
     done
 
     echo ""

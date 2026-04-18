@@ -15,8 +15,7 @@ option_title() {
     case "$(basename "$1")" in
         01-list-validate-ssh-keys.sh) echo "01 · List & Validate SSH Keys" ;;
         02-add-new-ssh-key.sh) echo "02 · Add New SSH Key" ;;
-        03-add-new-submodule.sh) echo "03 · Add New Submodule" ;;
-        04-scan-child-submodules.sh) echo "04 · Scan Child Submodules" ;;
+        03-add-new-submodule.sh) echo "03 · Add New Submodule (incl. child scan)" ;;
         05-remove-submodules.sh) echo "05 · Remove Submodule(s)" ;;
         06-clean-submodules.sh) echo "06 · Clean Submodule(s)  (hide from VSCode)" ;;
         07-update-restore-submodules.sh) echo "07 · Update / Restore Submodule(s)" ;;

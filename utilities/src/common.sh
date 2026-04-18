@@ -106,6 +106,32 @@ matching_public_key_file() {
 
 _url_to_alias() { echo "$1" | sed -E 's/git@([^:]+):.*/\1/'; }
 
+_repo_path_from_url() {
+    echo "$1" | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##'
+}
+
+_repo_name_from_url() {
+    local repo_path
+    repo_path=$(_repo_path_from_url "$1")
+    basename "$repo_path"
+}
+
+_master_alias_from_url() {
+    _repo_name_from_url "$1"
+}
+
+_child_alias_from_master_and_url() {
+    local master_alias="$1" child_url="$2" child_name
+    child_name=$(_repo_name_from_url "$child_url")
+    echo "${master_alias}-${child_name}"
+}
+
+_url_with_alias() {
+    local url="$1" alias="$2" repo_path
+    repo_path=$(_repo_path_from_url "$url")
+    echo "git@${alias}:${repo_path}.git"
+}
+
 _alias_to_hostname() {
     local alias="$1" hn
     hn=$(awk "/^Host[[:space:]]+${alias}$/{found=1} found && /HostName/{print \$2; exit}" "$SSH_CONFIG" 2>/dev/null)
@@ -145,6 +171,24 @@ add_ssh_config_entry() {
     print_success "SSH config: added Host ${alias} → ${hostname} (key: ${key_file})"
 }
 
+upsert_ssh_config_entry() {
+    local alias="$1" hostname="$2" key_file="$3"
+    local expected_identity existing_hostname existing_identity
+    expected_identity="${SSH_DIR}/${key_file}"
+
+    if _host_exists "$alias"; then
+        existing_hostname=$(_host_hostname "$alias")
+        existing_identity=$(_host_identityfile "$alias")
+        if [[ "$existing_hostname" == "$hostname" && "$existing_identity" == "$expected_identity" ]]; then
+            print_info "SSH config already matches for ${alias}"
+            return 0
+        fi
+        remove_ssh_config_entry "$alias"
+    fi
+
+    add_ssh_config_entry "$alias" "$hostname" "$key_file"
+}
+
 remove_ssh_config_entry() {
     local alias="$1"
     _host_exists "$alias" || return
@@ -153,6 +197,16 @@ remove_ssh_config_entry() {
         !skip              { print }
     ' "$SSH_CONFIG" > "${SSH_CONFIG}.tmp" && mv "${SSH_CONFIG}.tmp" "$SSH_CONFIG"
     print_success "SSH config: removed Host ${alias}"
+}
+
+remove_ssh_config_entries_by_prefix() {
+    local prefix="$1"
+    local hosts=()
+    mapfile -t hosts < <(awk '/^Host[[:space:]]+/ {print $2}' "$SSH_CONFIG" 2>/dev/null | grep -E "^${prefix}-" || true)
+    local h
+    for h in "${hosts[@]}"; do
+        remove_ssh_config_entry "$h"
+    done
 }
 
 multi_select() {
@@ -257,22 +311,50 @@ _remove_single_submodule() {
     echo ""
     echo -e "  ${BOLD}Removing:${NC} ${sub}"
 
-    if [[ -f "${full}/.gitmodules" ]]; then
-        print_info "Nested submodules detected — skipping child-specific cleanup by design."
-    fi
-
+    # Remove SSH config entries for the target submodule and legacy aliases.
     local url
     url=$(get_submodule_url "$parent" "$sub" 2>/dev/null || true)
     if [[ "$url" == git@* ]]; then
-        local alias
-        alias=$(_url_to_alias "$url")
-        remove_ssh_config_entry "$alias"
+        local master_alias legacy_alias
+        master_alias=$(_master_alias_from_url "$url")
+        legacy_alias=$(_url_to_alias "$url")
+        remove_ssh_config_entry "$master_alias"
+        [[ "$legacy_alias" != "$master_alias" ]] && remove_ssh_config_entry "$legacy_alias"
+
+        # If removing a master submodule, also remove all prefixed child aliases.
+        if [[ "$parent" == "." ]]; then
+            remove_ssh_config_entries_by_prefix "$master_alias"
+        fi
+    fi
+
+    # If this submodule has nested children, remove their SSH blocks by exact alias too.
+    if [[ -f "${full}/.gitmodules" ]]; then
+        print_info "Removing SSH config entries for nested children…"
+        local master_alias
+        master_alias=$(basename "$sub")
+        [[ "$url" == git@* ]] && master_alias=$(_master_alias_from_url "$url")
+        local children
+        mapfile -t children < <(get_submodule_paths "$full" 2>/dev/null || true)
+        local child
+        for child in "${children[@]}"; do
+            local child_url
+            child_url=$(get_submodule_url "$full" "$child" 2>/dev/null || true)
+            if [[ "$child_url" == git@* ]]; then
+                local child_alias
+                child_alias=$(_child_alias_from_master_and_url "$master_alias" "$child_url")
+                remove_ssh_config_entry "$child_alias"
+            fi
+        done
     fi
 
     if git -C "$parent" submodule deinit -f "$sub" >/dev/null 2>&1; then
         print_info "Deinitialized ${sub}"
     else
         print_warn "deinit had warnings for ${sub}"
+    fi
+
+    if [[ -d "$full/.git" || -f "$full/.git" ]]; then
+        git -C "$full" remote remove origin >/dev/null 2>&1 || true
     fi
 
     # Remove tracked files, then also clear any remaining cached entry if needed.
