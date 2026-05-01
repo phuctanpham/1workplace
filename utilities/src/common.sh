@@ -201,11 +201,11 @@ remove_ssh_config_entry() {
 
 remove_ssh_config_entries_by_prefix() {
     local prefix="$1"
-    local hosts=()
-    mapfile -t hosts < <(awk '/^Host[[:space:]]+/ {print $2}' "$SSH_CONFIG" 2>/dev/null | grep -E "^${prefix}-" || true)
+    local hosts
+    hosts=$(awk '/^Host[[:space:]]+/ {print $2}' "$SSH_CONFIG" 2>/dev/null | grep -E "^${prefix}-" || true)
     local h
-    for h in "${hosts[@]}"; do
-        remove_ssh_config_entry "$h"
+    echo "$hosts" | while IFS= read -r h; do
+        [ -n "$h" ] && remove_ssh_config_entry "$h"
     done
 }
 
@@ -337,19 +337,16 @@ get_submodule_url() {
 
 _remove_remote_by_url_if_present() {
     local repo_dir="$1" target_url="$2"
-    [[ -n "$target_url" ]] || return 0
+    [ -n "$target_url" ] || return 0
 
     git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || return 0
 
     local removed=0
-    local remotes
-    mapfile -t remotes < <(git -C "$repo_dir" remote 2>/dev/null || true)
-
     local r
-    for r in "${remotes[@]}"; do
+    git -C "$repo_dir" remote 2>/dev/null | while IFS= read -r r; do
         local current_url
         current_url=$(git -C "$repo_dir" remote get-url "$r" 2>/dev/null || true)
-        if [[ "$current_url" == "$target_url" ]]; then
+        if [ "$current_url" = "$target_url" ]; then
             if git -C "$repo_dir" remote remove "$r" >/dev/null 2>&1; then
                 print_info "Removed remote '${r}' (${target_url})"
                 removed=1
@@ -357,7 +354,7 @@ _remove_remote_by_url_if_present() {
         fi
     done
 
-    if ((removed == 0)); then
+    if [ "$removed" -eq 0 ]; then
         print_info "No matching remote URL to remove: ${target_url}"
     fi
 }
